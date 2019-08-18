@@ -1,0 +1,71 @@
+service: vue-chat-app-api
+
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  runtime: nodejs10.x
+  websocketApiRouteSelectionExpression: $request.body.action
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - "execute-api:ManageConnections"
+      Resource:
+        - "arn:aws:execute-api:${self:provider.region}:*:**/@connections/*"
+    - Effect: Allow
+      Action:
+        - "dynamodb:*"
+      Resource:
+        - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.connectionTable}"
+
+custom:
+  connectionTable: Connection-Table
+
+package:
+  individually: true
+  exclude:
+    - .serverless/**
+    - .gitignore
+    - package.json
+    - yarn.lock
+    - serverless.yml
+
+functions:
+  onConnect:
+    handler: src/onconnect.handler
+    environment:
+      CONNECTION_TABLE: ${self:custom.connectionTable}
+    events:
+      - websocket: $connect
+  onDisconnect:
+    handler: src/ondisconnect.handler
+    environment:
+      CONNECTION_TABLE: ${self:custom.connectionTable}
+    events:
+      - websocket: $disconnect
+  sendMessage:
+    handler: src/sendMessage.handler
+    environment:
+      CONNECTION_TABLE: ${self:custom.connectionTable}
+    events:
+      - websocket: sendmessage
+
+resources:
+  Resources:
+    connectionTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.connectionTable}
+        AttributeDefinitions:
+          - AttributeName: roomName
+            AttributeType: S
+          - AttributeName: connectionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: roomName
+            KeyType: HASH
+          - AttributeName: connectionId
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
